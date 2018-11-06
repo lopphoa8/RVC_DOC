@@ -1,0 +1,12 @@
+
+1)Go to http://www.accellera.org/activities/vip/
+2)Download the uvm*.tar.gz file.
+3)Untar the file.
+4)Go to the extracted directory : cd uvm*\uvm\src
+5)Set the UVM_HOME path : setenv UVM_HOME `pwd`
+(This is required to run the examples which are downloaded from this site)
+6)Go to examples : cd ../examples/hello_world/uvm/
+7)Compile the example using :
+your_tool_compilation_command -f compile_<toolname>.f
+(example for questasim use : qverilog -f compile_questa.f)
+8)Run the example. 
