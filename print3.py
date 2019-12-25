@@ -1,27 +1,26 @@
 # -*- coding: utf-8 -*-
 import openpyxl
 
-file = 'MarketingAnalystNames.xlsx'
-file2 = 'MarketingAnalystNames22.xlsx'
-wb = openpyxl.load_workbook(filename=file)
+file1 = 'MarketingAnalystNames.xlsx'
+file2 = 'MarketingAnalystNames_Merge.xlsx'
 
-# Seleciono la Hoja
-ws = wb.get_sheet_by_name('Sheet1')
+wb1 = openpyxl.load_workbook(filename=file1)
+wb2 = openpyxl.load_workbook(filename=file2)
 
-# Valores a Insertar
-ws['A3'] = 42
-ws['A4'] = 142
+print(len(wb1.sheetnames))
+sheets = wb1.sheetnames
 
-print(len(wb.sheetnames))
-sheets = wb.sheetnames
+for sh in range (len(wb1.sheetnames)):
+        sheet1 = wb1.get_sheet_by_name(sheets[sh])
+        sheet2 = wb2.get_sheet_by_name(sheets[sh])
+        for i in range(1,sheet1.max_row+1):
+                for j in range(1,sheet1.max_column+1):
+                                print(sh,i,j,sheet1.cell(i,j).value)
+                                sheet2.cell(i,j).value = sheet1.cell(i,j).value
+                                print(sh,i,j,sheet2.cell(i,j).value)
 
-for sh in range (len(wb.sheetnames)):
-        sheet = wb.get_sheet_by_name(sheets[sh])
-        for i in range(1,sheet.max_row):
-                for j in range(1,sheet.max_column):
-                                print(sh,i,j,sheet.cell(i,j).value)
-                                sheet.cell(i,j).value = 0
                                 
 
 # Escribirmos en el Fichero
-wb.save(file2)
+wb1.save(file1)
+wb2.save(file2)
