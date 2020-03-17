@@ -18,16 +18,3 @@ install details
 put the automatic.vim in .vim/ftplugin/vlog/
 befor.v: a Verilog example before run auto functions
 after.v: a Verilog example after run auto functions
-
-Private Sub Application_Quit()
-  If TimerID <> 0 Then Call DeactivateTimer 'Turn off timer upon quitting **VERY IMPORTANT**
-End Sub
-
-Private Sub Application_Startup()
-    result = MsgBox("Activate the Mail Filter?" & Chr(10) & "*If you want to upgrade the Rule, please select NO", vbYesNo)
-    If result = vbYes Then
-        Call ActivateTimer(5) 'Set timer to go off every 5 seconds
-    Else
-        result = MsgBox("If you want to activate Mail Filter, you should restart the Outlook!", vbOKOnly, "Filtering Mail by VBA")
-    End If
-End Sub
