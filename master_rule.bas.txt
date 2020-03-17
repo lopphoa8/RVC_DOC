@@ -1,1 +1,849 @@
-test
+Attribute VB_Name = "master_rule"
+Declare PtrSafe Function SetTimer Lib "user32" (ByVal hWnd As Long, ByVal nIDEvent As Long, ByVal uElapse As Long, ByVal lpTimerfunc As Long) As Long
+Declare PtrSafe Function KillTimer Lib "user32" (ByVal hWnd As Long, ByVal nIDEvent As Long) As Long
+
+Public TimerID As Long 'Need a timer ID to eventually turn off the timer. If the timer ID <> 0 then the timer is running
+
+Public Sub TriggerTimer(ByVal hWnd As Long, ByVal uMsg As Long, ByVal idevent As Long, ByVal Systime As Long)
+  'MsgBox "The TriggerTimer function has been automatically called!"    ' Debug by MsgBox
+  MasterRuleCode
+End Sub
+
+Public Sub DeactivateTimer()
+Dim lSuccess As Long
+  lSuccess = KillTimer(0, TimerID)
+  If lSuccess = 0 Then
+    MsgBox "The timer failed to deactivate."
+  Else
+    TimerID = 0
+  End If
+End Sub
+
+Public Sub ActivateTimer(ByVal nSeconds As Long)
+  nSeconds = nSeconds * 1000 'The SetTimer call accepts milliseconds, so convert to seconds
+  If TimerID <> 0 Then Call DeactivateTimer 'Check to see if timer is running before call to SetTimer
+  TimerID = SetTimer(0, 0, nSeconds, AddressOf TriggerTimer)
+  If TimerID = 0 Then
+    MsgBox "The timer failed to activate."
+  End If
+End Sub
+
+Function SplitEmailHeader(strHeader As String, strReq As String) As String
+    Dim splitContent() As String
+    If InStr(strHeader, Chr(10) & strReq) <> 0 Then
+        splitContent = Split(strHeader, Chr(10) & strReq)
+        'MsgBox (splitContent(1))
+        splitContent = Split(splitContent(1), ":")
+        SplitEmailHeader = UCase(splitContent(0))
+    Else
+        SplitEmailHeader = "NULL"
+    End If
+End Function
+
+Function DeleteItemPermanently(delItem As Outlook.MailItem) As Actions
+    Const PR_INTERNET_MESSAGE_ID = "http://schemas.microsoft.com/mapi/proptag/0x1035001E"
+    Set myDeleted = Application.GetNamespace("MAPI").Folders("tung.nguyen.ra@renesas.com").Folders("Deleted Items")
+    'MsgBox ("Total DeleteItem = " & myDeleted.Items.Count)
+    FindId = delItem.PropertyAccessor.GetProperty(PR_INTERNET_MESSAGE_ID)
+    delItem.Delete                              ' Delete item 1 times
+    For indexx = myDeleted.Items.Count To 1 Step -1
+        If myDeleted.Items(indexx).PropertyAccessor.GetProperty(PR_INTERNET_MESSAGE_ID) = FindId Then
+            myDeleted.Items(indexx).Delete      ' Delete item 2 times - Forever
+            'MsgBox ("FOUND")
+            Exit For
+        End If
+    Next
+    'MsgBox ("Total DeleteItem = " & myDeleted.Items.Count)
+End Function
+
+
+Function OnlyMe(myTo As String) As Boolean
+    Dim myAddr As String
+    myAddr = "tung.nguyen.ra@renesas.com"
+    If StrCmp(UCase(myTo), UCase(myAddr)) <> 0 And UBound(Split(myTo, "@")) = 1 Then
+        OnlyMe = True
+    Else
+        OnlyMe = False
+    End If
+End Function
+
+
+Sub MasterRuleCode()
+    Dim myNameSpace, myInbox
+    Set myNameSpace = Application.GetNamespace("MAPI")
+    Set myInbox = myNameSpace.Folders("tung.nguyen.ra@renesas.com").Folders("Inbox")
+    
+    Dim totalItem, index As Integer
+    totalItem = myInbox.Items.Count
+    
+    'MsgBox (totalItem)
+    
+    ' Run filter on only unread items
+    For index = totalItem To 1 Step -1
+        If myInbox.Items(index).UnRead And myInbox.Items(index).Class = OlObjectClass.olMail Then   ' Must be unread and mail item only
+            'MsgBox (index)
+            'CustomMailMessageRule (myInbox.Items(index))
+            'Highlight (myInbox.Items(index))
+            FilterItem (index)  ' Passing index
+            
+        Else
+            'Highlight (myInbox.Items(index))
+            myInbox.Items(index).Move myNameSpace.Folders("TungNguyen_Local").Folders("Inbox")    ' Move unread to Local Inbox
+            'CustomMailMessageRule (myInbox.Items(index))
+        End If
+    Next
+End Sub
+
+Function StrCmp(myStr As String, myCmp As String) As Boolean
+    If InStr(myStr, UCase(myCmp)) <> 0 Then
+        StrCmp = True
+    Else
+        StrCmp = False
+    End If
+End Function
+
+Function FilterItem(itemNumber As Integer) As Actions
+    Const PR_TRANSPORT_MESSAGE_HEADERS = "http://schemas.microsoft.com/mapi/proptag/0x007D001E"
+    
+    Dim myNameSpace, myInbox, myTungNguyen, myItems
+    Dim MyItem As Outlook.MailItem
+    Dim myCopiedItem As Outlook.MailItem
+    Dim copied As String
+    
+    Set myNameSpace = Application.GetNamespace("MAPI")
+    Set myInbox = myNameSpace.Folders("tung.nguyen.ra@renesas.com").Folders("Inbox")
+    Set myTungNguyen = myNameSpace.Folders("TungNguyen_Local")
+    Set MyItem = myInbox.Items(itemNumber)
+    MyItem.BodyFormat = olFormatHTML
+    
+    ' Get header of mail
+    Dim header As String
+    header = MyItem.PropertyAccessor.GetProperty(PR_TRANSPORT_MESSAGE_HEADERS)
+    
+    Dim SubjectContent As String
+    Dim BodyContent As String
+    Dim SubjectAndBody As String
+    Dim ToSomeOne As String
+    Dim FromSomeOne As String
+    Dim CCSomeOne As String
+    Dim ToAndCC As String
+
+    ' Debugging header ***************************************************
+    'Dim myNew As Object
+    'Set myNew = Application.CreateItem(olMailItem)
+    'myNew.Subject = Format(Now(), "mmm") & ", " & Format(Now(), "dd")
+    'myNew.To = "tung.nguyen.ra@renesas.com;"
+    'myNew.body = header
+    'myNew.Display
+    '*********************************************************************
+    
+    ' Extract necessary information **************************************
+    SubjectContent = UCase(MyItem.Subject)
+    BodyContent = UCase(MyItem.Body)
+    SubjectAndBody = SubjectContent & " " & BodyContent
+    FromSomeOne = SplitEmailHeader(header, "From:")
+    ToSomeOne = SplitEmailHeader(header, "To:")
+    CCSomeOne = SplitEmailHeader(header, "CC:")
+    ToAndCC = ToSomeOne & " " & CCSomeOne
+    '*********************************************************************
+    
+    ' Debuging above extraction ******************************************
+    'MsgBox ("SubjectContent: " & SubjectContent)
+    'MsgBox ("BodyContent: " & BodyContent)
+    'MsgBox ("SubjectAndBody: " & SubjectAndBody)
+    'MsgBox ("FromSomeOne: " & FromSomeOne)
+    'MsgBox ("ToSomeOne: " & ToSomeOne)
+    'MsgBox ("CCSomeOne: " & CCSomeOne)
+    'MsgBox ("ToAndCC: " & ToAndCC)
+    '*********************************************************************
+    
+    ' *****************************
+    ' * HIGHLIGHT START AT HERE *
+    ' *****************************
+    
+        wordToSearch1 = "TungN"
+    If InStr(1, MyItem.Body, wordToSearch1) <> 0 Then
+        strData = MyItem.HTMLBody
+        strData = Replace(strData, wordToSearch1, "<FONT style=" & Chr(34) & "BACKGROUND-COLOR: yellow" & Chr(34) & "FONT-COLOR: red" & Chr(34) & " size=" & Chr(34) & "10" & Chr(34) & ">" & wordToSearch1 & "</FONT>")
+        MyItem.HTMLBody = strData
+        MyItem.Save
+    End If
+
+            wordToSearch2 = "TungN3"
+    If InStr(1, MyItem.Body, wordToSearch2) <> 0 Then
+        strData = MyItem.HTMLBody
+        strData = Replace(strData, wordToSearch2, "<FONT style=" & Chr(34) & "BACKGROUND-COLOR: yellow" & Chr(34) & "FONT-COLOR: red" & Chr(34) & " size=" & Chr(34) & "10" & Chr(34) & ">" & wordToSearch2 & "</FONT>")
+        MyItem.HTMLBody = strData
+        MyItem.Save
+    End If
+    
+    
+            wordToSearch3 = "TungNg3"
+    If InStr(1, MyItem.Body, wordToSearch3) <> 0 Then
+        strData = MyItem.HTMLBody
+        strData = Replace(strData, wordToSearch3, "<FONT style=" & Chr(34) & "BACKGROUND-COLOR: yellow" & Chr(34) & "FONT-COLOR: red" & Chr(34) & " size=" & Chr(34) & "10" & Chr(34) & ">" & wordToSearch3 & "</FONT>")
+        MyItem.HTMLBody = strData
+        MyItem.Save
+    End If
+        
+            wordToSearch4 = "Tung Nguyen"
+    If InStr(1, MyItem.Body, wordToSearch4) <> 0 Then
+        strData = MyItem.HTMLBody
+        strData = Replace(strData, wordToSearch4, "<FONT style=" & Chr(34) & "BACKGROUND-COLOR: yellow" & Chr(34) & "FONT-COLOR: red" & Chr(34) & " size=" & Chr(34) & "10" & Chr(34) & ">" & wordToSearch4 & "</FONT>")
+        MyItem.HTMLBody = strData
+        MyItem.Save
+    End If
+        
+            wordToSearch5 = "Tung-san"
+    If InStr(1, MyItem.Body, wordToSearch5) <> 0 Then
+        strData = MyItem.HTMLBody
+        strData = Replace(strData, wordToSearch5, "<FONT style=" & Chr(34) & "BACKGROUND-COLOR: yellow" & Chr(34) & "FONT-COLOR: red" & Chr(34) & " size=" & Chr(34) & "10" & Chr(34) & ">" & wordToSearch5 & "</FONT>")
+        MyItem.HTMLBody = strData
+        MyItem.Save
+    End If
+    
+    ' *****************************
+    ' * HIGHLIGHT END AT HERE *
+    ' *****************************
+    
+    
+    
+    
+    ' *****************************
+    ' * RULE DEFINITION FROM HERE *
+    ' *****************************
+    
+    
+        
+    '============== 99_Others / MCU =======================================================================
+    If (StrCmp(SubjectContent, "[SCD]") Or _
+        StrCmp(SubjectContent, "DISK_MONITOR") Or _
+        StrCmp(SubjectContent, "LSF_VIOLATION") Or _
+        StrCmp(SubjectContent, "AMCU") Or _
+        StrCmp(SubjectContent, "MCUS") Or _
+        StrCmp(SubjectContent, "AutoMCU") Or _
+        StrCmp(ToAndCC, "mcu") Or _
+        StrCmp(ToAndCC, "MCU") Or _
+        StrCmp(ToAndCC, "E2x-FCC1")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("99_Others")
+            MyItem.Move myDestFolder
+            copied = "OK"
+    End If
+    
+    
+    
+            '============== 99_Others / VBA =======================================================================
+    If (StrCmp(SubjectContent, "VBA") Or StrCmp(SubjectContent, "OUTLOOK") Or StrCmp(FromSomeOne, "lopphoa8@gmail.com")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("80.Share")
+            MyItem.Move myDestFolder
+            copied = "OK"
+    End If
+    
+
+    
+    
+    '============== 01_Notice / From someone =======================================================================
+    'If (StrCmp(SubjectContent, "h3") Or StrCmp(SubjectContent, "h3es2") Or StrCmp(SubjectContent, "H3-ES2")) Then
+        copied = "NG"
+        
+        ' Work
+        
+         If (StrCmp(SubjectContent, "img_repo")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("10_Redmine_SVN").Folders("_____IMG_repo")
+            MyItem.Move myDestFolder
+            copied = "OK"
+         End If
+         
+        If StrCmp(FromSomeOne, "akihiro.yamamoto.xk@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____Yamamoto-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+         
+        If StrCmp(FromSomeOne, "atsushi.nakamura.wr@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____Nakamura-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+         
+        If StrCmp(FromSomeOne, "hanno.lieske.uj@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____Lieske-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If StrCmp(FromSomeOne, "takashi.kasai.xb@bp.renesas.com") Or _
+        StrCmp(FromSomeOne, "tien.nguyen.jg@renesas.com") Or _
+        StrCmp(FromSomeOne, "keisuke.matsumoto.yh@renesas.com") Or _
+        StrCmp(FromSomeOne, "katsushige.matsubara.xv@renesas.com") _
+        Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____VIN")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If StrCmp(FromSomeOne, "giang.nguyen.vz@rvc.renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____Giang-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        ' Manager
+        If StrCmp(FromSomeOne, "khoa.tran.xm@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Khoa-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+         If StrCmp(FromSomeOne, "hai.nguyen.fv@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Hai-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        
+        If StrCmp(FromSomeOne, "kiet.le.rj@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Kiet-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If StrCmp(FromSomeOne, "nghia.tran.xm@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Nghia-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+
+        If StrCmp(FromSomeOne, "toan.nguyen.xz@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Toan-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If StrCmp(FromSomeOne, "thanh.le.fn@rvc.renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Thanh-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        
+                If StrCmp(FromSomeOne, "khang.pham.ud@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Khang-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If StrCmp(FromSomeOne, "vinh.thai.cj@rvc.renesas.com") Or StrCmp(FromSomeOne, "vinh.thai.cj@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Vinh-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+                
+        If (StrCmp(FromSomeOne, "chi.nguyen.jz@rvc.renesas.com") Or StrCmp(FromSomeOne, "chi.nguyen.jz@renesas.com")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Chi-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        If (StrCmp(FromSomeOne, "vu.tran.yw@rvc.renesas.com") Or StrCmp(FromSomeOne, "vu.tran.yw@renesas.com")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Vu-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        ' Project Leader
+        If (StrCmp(FromSomeOne, "phe.nguyen.aj@rvc.renesas.com") Or StrCmp(FromSomeOne, "phe.nguyen.aj@renesas.com")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Phe-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+                
+        If StrCmp(FromSomeOne, "an.nguyen.vz@renesas.com") Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____An-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+            
+        If (StrCmp(FromSomeOne, "son.nguyen.wh@renesas.com") Or StrCmp(FromSomeOne, "son.nguyen.wh@rvc.renesas.com")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Son-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+
+
+        
+        If (StrCmp(FromSomeOne, "thanh.tran.yf@rvc.renesas.com") Or StrCmp(FromSomeOne, "thanh.tran.yf@renesas.com")) Then
+            copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("00_Manager_Leader").Folders("_____Thanh-san")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+        
+        
+
+            ' RCAR leader
+    If StrCmp(ToAndCC, "rvc-rcar-ld@rvc.renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____LD")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+
+    
+    
+        '============== 00_General_Issues / 02_From_AIS_Group =====================================================
+    If StrCmp(ToAndCC, "prj-cis@rvc.renesas.com") Or _
+       StrCmp(ToAndCC, "mob-hw2@rvc.renesas.com") Or _
+       StrCmp(ToAndCC, "rcar-gfx@rvc.renesas.com") Or _
+       StrCmp(ToAndCC, "rcar-per@rvc.renesas.com") Or _
+       StrCmp(SubjectContent, "[AIS]") Or _
+       StrCmp(SubjectContent, "[GFX]") Or _
+       StrCmp(SubjectContent, "G-FYI") Or _
+       StrCmp(SubjectContent, "RCID5") Or _
+       StrCmp(SubjectContent, "[AISS1]") Then
+        ' FYI: Take off, infor...
+        If (StrCmp(SubjectContent, "take")) And StrCmp(SubjectContent, "off") Or _
+           StrCmp(SubjectContent, "will be off") Or _
+           StrCmp(SubjectContent, "is off") Or _
+           StrCmp(SubjectContent, "leave") Or _
+           StrCmp(SubjectContent, "AIS") Or _
+           StrCmp(SubjectContent, "GFX") Or _
+           StrCmp(SubjectContent, "FWT") Or _
+           StrCmp(SubjectContent, "FYI") Then
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        ElseIf StrCmp(SubjectContent, "G-AN") Then
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        ElseIf StrCmp(SubjectContent, "OT") And _
+                (StrCmp(SubjectContent, "registration") Or StrCmp(SubjectContent, "register") Or StrCmp(SubjectContent, "report")) Then
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        ElseIf StrCmp(SubjectContent, "G-SHARE") Then
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        ElseIf StrCmp(SubjectContent, "[Weekly report]") Then
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        Else
+            Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        End If
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    ' Addition to weekly report remind
+    If StrCmp(ToAndCC, "tung.nguyen.ra@renesas.com") And _
+       StrCmp(SubjectContent, "[Weekly report]") Then
+        Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____GFX")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+        '============== 90.Conversation ===============================================
+    If StrCmp(SubjectContent, "Football") Or StrCmp(SubjectContent, "Basketball") Then
+        Set myDestFolder = myTungNguyen.Folders("90.Conversation")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+            
+    '============== 00_General_Issues / 02_From_AIS_Group / IMR/IMP Team ======================================
+    If StrCmp(ToAndCC, "rvc_ip_prj@lm.renesas.com") Or _
+        (StrCmp(SubjectContent, "IMR") And StrCmp(SubjectContent, "improve")) Or _
+        (StrCmp(SubjectContent, "IMP") And StrCmp(SubjectContent, "improve")) Or _
+        (StrCmp(SubjectContent, "CNN") And StrCmp(SubjectContent, "improve")) Or _
+        StrCmp(FromSomeOne, "isao.nagayoshi.fz@renesas.com") Or _
+        StrCmp(FromSomeOne, "keisuke.mikami.te@bp.renesas.com") Or _
+        StrCmp(FromSomeOne, "hanno.lieske.uj@renesas.com") Or _
+        StrCmp(FromSomeOne, "atsushi.nakamura.wr@renesas.com") Or _
+        StrCmp(FromSomeOne, "rajesh.ghimire.zn@renesas.com") Or _
+        StrCmp(FromSomeOne, "satomi.yamauchi.yn@renesas.com") Or _
+        StrCmp(FromSomeOne, "koji.saito.zc@renesas.com") Or _
+        StrCmp(FromSomeOne, "akihiro.yamamoto.xk@renesas.com") Then
+        
+        copied = "NG"
+        Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____IMG")
+        MyItem.Copy.Move myDestFolder
+        copied = "OK"
+        'Exit Function
+    Else
+    If (StrCmp(SubjectContent, "IMPORTANT") Or _
+        StrCmp(SubjectContent, "Timimg") Or _
+        StrCmp(SubjectContent, "IMPORTANTANCE") Or _
+        StrCmp(SubjectContent, "improve") Or _
+        StrCmp(SubjectContent, "Implement") Or _
+        StrCmp(SubjectContent, "impact")) Then
+    Else
+    If StrCmp(SubjectContent, "IMR") Or _
+        StrCmp(SubjectContent, "IMG") Or _
+        StrCmp(SubjectContent, "IMP") Or _
+        StrCmp(SubjectContent, "CNN") Or _
+        StrCmp(ToAndCC, "rvc_ip_prj@lm.renesas.com") _
+    Then
+        copied = "NG"
+        Set myDestFolder = myTungNguyen.Folders("__Notice").Folders("_____IMG")
+        MyItem.Copy.Move myDestFolder
+        copied = "OK"
+        'Exit Function
+    End If
+    End If
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Admin ===============================================
+    If StrCmp(FromSomeOne, "linh.truong.ak@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "hitoshi.nakata.xc@renesas.com") Or _
+       StrCmp(FromSomeOne, "linh.truong.ak@renesas.com") Or _
+       StrCmp(SubjectContent, "[Admin]") Or _
+       StrCmp(FromSomeOne, "van.nguyen.xw@renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Finance_Admin_Secretary")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Facility ============================================
+    If (StrCmp(FromSomeOne, "tuan.bui.vf@rvc.renesas.com") Or _
+        StrCmp(SubjectContent, "JIRA") Or _
+        StrCmp(FromSomeOne, "tuan.bui.vf@renesas.com") Or _
+        StrCmp(FromSomeOne, "it-support@rvc.renesas.com") Or _
+        StrCmp(FromSomeOne, "thanh.ho.kx@renesas.com") Or _
+        StrCmp(FromSomeOne, "tai.vo.xg@renesas.com") Or _
+        StrCmp(FromSomeOne, "cuong.nguyen.yn@renesas.com") Or _
+        StrCmp(FromSomeOne, "it-support1@rvc.renesas.com")) Then
+        Set myDestFolder = myTungNguyen.Folders("40.IT_FC")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / FED1_2 ==============================================
+    If StrCmp(FromSomeOne, "atsuo.hanami.ur@renesas.com") Or _
+       StrCmp(ToAndCC, "rvc-eng-fe@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Company_Department")
+            MyItem.Move myDestFolder
+            Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Finance =============================================
+    If StrCmp(FromSomeOne, "lieu.nguyen.pz@renesas.com") Or _
+       StrCmp(FromSomeOne, "quyen.tran.rh@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "thu.nguyen.df@rvc.renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Finance_Admin_Secretary")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / HR ==================================================
+    If StrCmp(FromSomeOne, "thy.duong.eb@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "ha.ho.gx@renesas.com") Or _
+       StrCmp(FromSomeOne, "thy.duong.eb@renesas.com") Or _
+       StrCmp(FromSomeOne, "duyen.nguyen.yg@renesas.com") Or _
+       StrCmp(FromSomeOne, "mai.truong.xb@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "thu.phu.df@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "mai.truong.xb@renesas.com") Or _
+       StrCmp(FromSomeOne, "trang.nguyen.xh@renesas.com") Or _
+       StrCmp(FromSomeOne, "nhu.dau.eb@renesas.com") Or _
+       StrCmp(FromSomeOne, "duong.vo.aj@renesas.com") Or _
+       StrCmp(FromSomeOne, "tung.le.kx@renesas.com") Or _
+       StrCmp(FromSomeOne, "dan.tran.df@renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____HR")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / IT ==================================================
+    If StrCmp(FromSomeOne, "RVC-IT Task Management System") Or _
+       StrCmp(FromSomeOne, "phi.luong.pz@renesas.com") Or _
+       StrCmp(FromSomeOne, "thanh.ho.kx@rvc.renesas.com") Or _
+       StrCmp(FromSomeOne, "chuong.tran.vx@renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("40.IT_FC")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Market ==============================================
+    If StrCmp(ToSomeOne, "issei_market@lm.renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Company_Department")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Secretary ===========================================
+    If StrCmp(FromSomeOne, "uyen.pham.wh@renesas.com") Or _
+       StrCmp(FromSomeOne, "nhi.hoang.fz@renesas.com") Or _
+       StrCmp(FromSomeOne, "ngoc.ha.xt@rvc.renesas.com") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Finance_Admin_Secretary")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Stationery Request ==================================
+    If StrCmp(SubjectContent, "[Stationery Request]") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Finance_Admin_Secretary")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 01_From_Company / Trade Union =========================================
+    If StrCmp(SubjectContent, "[Trade Union]") Or _
+       StrCmp(SubjectContent, "TU Summer Trip") Or _
+       StrCmp(FromSomeOne, "thang.nguyen.yj@rvc.renesas.com") Or _
+       StrCmp(SubjectContent, "[TUC]") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Trade Union")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+
+    '============== 00_General_Issues / 03_From_SilkPortal_TimingModification =================================
+    If StrCmp(FromSomeOne, "SilkPortal.System@rvc.renesas.com") Or _
+       StrCmp(SubjectContent, "Timing Modification") Then
+        Set myDestFolder = myTungNguyen.Folders("60.Organization").Folders("_____Finance_Admin_Secretary")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 00_General_Issues / 04_From_eCalendar_Meeting =============================================
+    If StrCmp(SubjectContent, "[Calendar Event]") Or _
+       StrCmp(SubjectContent, "[Calendar Alarm]") Then
+        Set myDestFolder = myTungNguyen.Folders("50.TC_QC")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    
+    '============== 01_Project / 001_E2 =======================================================================
+    If StrCmp(SubjectContent, "e2") Then
+        If StrCmp(ToAndCC, "prj-cis-rce2@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____E2X")
+            MyItem.Move myDestFolder
+            Exit Function
+        ElseIf StrCmp(ToAndCC, "rvc-rce2@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____E2X")
+            MyItem.Move myDestFolder
+            Exit Function
+        End If
+    End If
+    
+    '============== 01_Project / 002_E2x ======================================================================
+    If StrCmp(SubjectContent, "e2x") Then
+        If StrCmp(ToAndCC, "prj-cis-rcare2x@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____E2X")
+            MyItem.Move myDestFolder
+            Exit Function
+        ElseIf StrCmp(ToAndCC, "rvc-rcare2x@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____E2X")
+            MyItem.Move myDestFolder
+            Exit Function
+        End If
+    End If
+     
+    '============== 01_Project / 003_M3W =======================================================================
+    If StrCmp(SubjectContent, "m3w") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcm3w@rvc.renesas.com") Or StrCmp(ToAndCC, "prj-be-rcarm3w@rvc.renesas.com") Or StrCmp(ToAndCC, "rvc-rcm3w@rvc.renesas.com") Or StrCmp(SubjectContent, "M3W")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____M3W")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+       
+    '============== 01_Project / 003_M3N =======================================================================
+    If StrCmp(SubjectContent, "m3n") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcm3n@rvc.renesas.com") Or StrCmp(ToAndCC, "prj-be-rcarm3n@rvc.renesas.com") Or StrCmp(ToAndCC, "rvc-rcm3n@rvc.renesas.com") Or StrCmp(SubjectContent, "M3N")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____M3N")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+    
+        '============== 01_Project / 004_H3ES2 =======================================================================
+    If (StrCmp(SubjectContent, "h3") Or StrCmp(SubjectContent, "h3es2") Or StrCmp(SubjectContent, "H3-ES2") Or StrCmp(ToAndCC, "rvc-rch3@rvc.renesas.com")) Then
+        copied = "NG"
+        If (StrCmp(SubjectContent, "h3") Or StrCmp(SubjectContent, "h3es2") Or StrCmp(SubjectContent, "H3-ES2") Or StrCmp(ToAndCC, "rvc-rch3@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____H3")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+       
+    
+    '============== 01_Project / 004_V3M =======================================================================
+    If StrCmp(SubjectContent, "v3m") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcv3m@rvc.renesas.com") Or StrCmp(SubjectContent, "V3M") Or StrCmp(ToAndCC, "rvc-rcv3m@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____V3M")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+   
+        '============== 01_Project / 004_D1 =======================================================================
+    If (StrCmp(SubjectContent, "d1")) Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-d1h@rvc.renesas.com") Or StrCmp(SubjectContent, "D1") Or StrCmp(ToAndCC, "rvc-d1h@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____D1")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+       
+            '============== 01_Project / 004_D3 =======================================================================
+    If (StrCmp(SubjectContent, "d3")) Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcd3@rvc.renesas.com") Or StrCmp(SubjectContent, "D3") Or StrCmp(ToAndCC, "rvc-rcd3@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____D3")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+   
+    '============== 01_Project / 004_V3H =======================================================================
+    If StrCmp(SubjectContent, "v3h") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcv3h@rvc.renesas.com") Or StrCmp(SubjectContent, "V3H") Or StrCmp(ToAndCC, "rvc-rcv3h@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____V3H")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+    
+    '============== 01_Project / 004_V3U =======================================================================
+    If StrCmp(SubjectContent, "V3U") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcv3u@rvc.renesas.com") Or StrCmp(SubjectContent, "V3U") Or StrCmp(ToAndCC, "rvc-rcv3u@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____V3U")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+    
+      '============== 01_Project / 004_V4H =======================================================================
+    If (StrCmp(SubjectContent, "V4H") Or StrCmp(SubjectContent, "GSP4")) Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcv4h@rvc.renesas.com") Or StrCmp(SubjectContent, "V4H") Or StrCmp(SubjectContent, "GSP4") Or StrCmp(ToAndCC, "rvc-rcv4h@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____V4H")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+    
+       '============== 01_Project / 004_S4 =======================================================================
+    If (StrCmp(SubjectContent, "S4")) Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rcs4@rvc.renesas.com") Or StrCmp(SubjectContent, "S4") Or StrCmp(ToAndCC, "rvc-rcs4@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____S4")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+    
+    '============== 01_Project / 005_E3 =======================================================================
+    If StrCmp(SubjectContent, "e3") Then
+        copied = "NG"
+        If (StrCmp(ToAndCC, "prj-cis-rce3@rvc.renesas.com") Or StrCmp(SubjectContent, "E3") Or StrCmp(ToAndCC, "rvc-rce3@rvc.renesas.com")) Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____E3")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+        End If
+    End If
+
+    
+    '============== 02_Training / 02_AIS_Group_Training =======================================================
+    If (StrCmp(SubjectContent, "[G-Train]") Or StrCmp(SubjectContent, "24g training") Or StrCmp(SubjectContent, "25g training") Or StrCmp(FromSomeOne, "notifications@rvc.renesas.com")) Then
+        Set myDestFolder = myTungNguyen.Folders("50.TC_QC")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    If (StrCmp(ToAndCC, "prj-rcar-modeling@rvc.renesas.com") Or StrCmp(SubjectContent, "MBD") Or StrCmp(SubjectContent, "ESW") Or StrCmp(SubjectContent, "modeling")) Then
+        Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____MBD")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '============== 02_Training / 03_Technical_Training =======================================================
+    If (StrCmp(SubjectContent, "Technical Training") Or StrCmp(FromSomeOne, "hai.pham.uh@renesas.com")) Then
+        Set myDestFolder = myTungNguyen.Folders("50.TC_QC")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+   
+       '============== Synopsys =======================================================================
+    If (StrCmp(FromSomeOne, "scoutm@synopsys.com")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("99_Others").Folders("_____Synopsys")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+
+    End If
+   
+     '============== 02_project / HWM =======================================================================
+    If (StrCmp(ToAndCC, "prj-cis-rcgen3@rvc.renesas.com")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("02.Project")
+            MyItem.Copy.Move myDestFolder
+            copied = "OK"
+    End If
+    
+         '============== 02_project / HWM =======================================================================
+    If (StrCmp(SubjectContent, "Task #")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("10_Redmine_SVN").Folders("_____R-Car")
+            MyItem.Move myDestFolder
+        copied = "OK"
+    End If
+    
+         '============== 02_project / HWM =======================================================================
+    If (StrCmp(SubjectContent, "RCG3-BUS")) Then
+        copied = "NG"
+            Set myDestFolder = myTungNguyen.Folders("10_Redmine_SVN").Folders("_____RCG3-BUS")
+            MyItem.Move myDestFolder
+        copied = "OK"
+    End If
+    
+        '============== Notice / R-Car mail list =======================================================================
+        If StrCmp(ToAndCC, "rvc-rcar@rvc.renesas.com") Then
+            Set myDestFolder = myTungNguyen.Folders("02.Project").Folders("_____R-Car")
+            MyItem.Move myDestFolder
+        End If
+    
+    '============== 26G_RTL =======================================================
+    If StrCmp(SubjectContent, "26G") Then
+        Set myDestFolder = myTungNguyen.Folders("99_Others").Folders("_____26G")
+        MyItem.Move myDestFolder
+        Exit Function
+    End If
+    
+    '------------------------------------------------------------------------------------------------------
+    
+        If copied = "OK" Then
+            DeleteItemPermanently MyItem
+            Exit Function
+        End If
+    
+    
+    ' *****************************
+    ' * END RULE DEFINITION HERE  *
+    ' *****************************
+    
+End Function
+
+
